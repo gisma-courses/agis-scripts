@@ -80,7 +80,7 @@ chm <- grid_canopy(ctg, res = 5.0, lidR::pitfree(thresholds = c(0,2,5,10,15), c(
 opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/HULL_{XCENTER}_{YCENTER}")
 opt_chunk_buffer(ctg) = 20
 opt_chunk_size(ctg) = 0
-opt_filter(ctg) <- "filter_noise(ctg, sensitivity = 1.2)"
+opt_filter(ctg) <- "filter_noise(ctg, sensitivity = 1.2, res = 5)"
 
 #- tree segmentation using the 99 percentile filter
 ctg = lidR::segment_trees(ctg,  li2012(dt1 = 1.4, dt2 = 1.9, hmin = 5, R = 5) , uniqueness = "bitmerge")
@@ -107,7 +107,7 @@ hulls = catalog_apply(ctg=ctg, FUN = tree_fn)
  mapview(seg,zcol="zq95", fgb = FALSE)
  
  # gridmetrics
-  sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
+ sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
  plot(sapflow_metrics, col = height.colors(50))
  tmap_mode("view")
  tm_shape(sapflow_metrics) + tm_raster(col = "zq95") 

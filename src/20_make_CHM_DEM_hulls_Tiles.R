@@ -99,3 +99,6 @@ hulls = catalog_apply(ctg=ctg, FUN = tree_fn)
  mapview(seg,zcol="zq95", fgb = FALSE)
  
  
+ sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
+ plot(metrics, col = height.colors(50))
+ 

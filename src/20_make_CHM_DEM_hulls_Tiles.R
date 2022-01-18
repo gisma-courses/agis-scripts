@@ -2,8 +2,8 @@
 # Name: 10_make_CHM_DEM_hulls_Tiles.R
 # Type: control script 
 # Author: Chris Reudenbach, creuden@gmail.com
-# Description:  script creates a canopy height model from generic Lidar 
-#              las data using the lidR package
+# Description:  script creates a lidr catalog to derive tree segment based inizes
+#               canopy height model, Digital Elevation Models and standard statistics
 # Data: regular las LiDAR data sets 
 # Copyright:GPL (>= 3) 
 # Date: 2021-12-10
@@ -14,17 +14,22 @@ require(envimaR)
 # MANDANTORY: defining the root folder DO NOT change this line
 root_folder = "~/edu/agis"
 # define  additional packages comment if not needed
-appendpackagesToLoad = c("lidR","future","lwgeom")
+appendpackagesToLoad = c("lidR","future","lwgeom","tmap")
 # define additional subfolders comment if not needed
 appendProjectDirList =  c("data/lidar/","data/lidar/l_raster","data/lidar/l_raw","data/lidar/l_norm","data/lidar/l_vector")
 
-## define current projection ETRS89 / UTM zone 32N
-proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
-epsg_number = 25832
-tmap_options(check.and.fix = TRUE) 
 # MANDANTORY: calling the setup script also DO NOT change this line
 source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000-rspatial-setup.R"),local = knitr::knit_global())
 
+
+#--- further variables
+
+#- define current projection ETRS89 / UTM zone 32N
+proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+epsg_number = 25832
+
+#- tmap options
+tmap_options(check.and.fix = TRUE) 
 
 # 1 - start script
 #-----------------------------
@@ -35,8 +40,8 @@ las_file = paste0(envrmt$path_l_raw,"/las_mof.las")
 #- general catalog settings
 ctg <- lidR::readLAScatalog(las_file)
 projection(ctg) <- 25832
-lidR::opt_chunk_size(ctg) = 500
-lidR::opt_chunk_buffer(ctg) <- 20
+lidR::opt_chunk_size(ctg) = 250
+lidR::opt_chunk_buffer(ctg) <- 10
 lidR::opt_progress(ctg) <- TRUE
 lidR::opt_laz_compression(ctg) <- TRUE
 ctg@output_options$drivers$Raster$param$overwrite <- TRUE
@@ -98,7 +103,9 @@ hulls = catalog_apply(ctg=ctg, FUN = tree_fn)
  tm_shape(seg) + tm_fill(col = "zq95") 
  mapview(seg,zcol="zq95", fgb = FALSE)
  
- 
- sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
- plot(metrics, col = height.colors(50))
+ # gridmetrics
+  sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
+ plot(sapflow_metrics, col = height.colors(50))
+ tmap_mode("view")
+ tm_shape(sapflow_metrics) + tm_raster(col = "zq95") 
  

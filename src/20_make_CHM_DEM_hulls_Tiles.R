@@ -75,7 +75,7 @@ opt_chunk_size(ctg) = 0
 opt_filter(ctg) <- "filter_noise(ctg, sensitivity = 1.2)"
 
 #- tree segmentation using the 99 percentile filter
-ctg = lidR::segment_trees(ctg,  li2012(dt1 = 1.4, dt2 = 1.9, hmin = 5, R = 2) , uniqueness = "bitmerge")
+ctg = lidR::segment_trees(ctg,  li2012(dt1 = 1.4, dt2 = 1.9, hmin = 5, R = 5) , uniqueness = "bitmerge")
 laz = do.call(rbind, lapply(list.files(envrmt$path_l_raster, pattern = "*.laz", full.names = TRUE),readLAS))
 plot(laz,color = "treeID")
 saveRDS(ctg,paste0(envrmt$path_lidar,"/ctg.rds"))
@@ -84,36 +84,18 @@ saveRDS(ctg,paste0(envrmt$path_lidar,"/ctg.rds"))
 #- tree filtering and calculate hull 
 opt_filter(ctg) <- "!is.na(treeID)"
 ctg@output_options$drivers$Spatial$extension = ".shp"
-opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/HULL4_{XCENTER}_{YCENTER}")
+opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/HULL_sapflow_{XCENTER}_{YCENTER}")
 hulls = catalog_apply(ctg=ctg, FUN = tree_fn)
 
 #- merge shapefiles
 # file_list <- list.files(envrmt$path_l_raster, pattern = "HULL4_*.shp", full.names = TRUE)
  seg = do.call(rbind, lapply(hulls, read_sf))
- st_write(seg,paste0(envrmt$path_l_raster,"/segmentation_small.shp"))
+ st_write(seg,paste0(envrmt$path_l_raster,"/segmentation_sapflow.shp"))
  plot(st_geometry(seg))
 
 #- tmap plot
  tmap_mode("view")
  tm_shape(seg) + tm_fill(col = "zq95") 
  mapview(seg,zcol="zq95", fgb = FALSE)
- #- classic plot
-# plot( chm,
-#       col = lidR::height.colors(20),
-#       main = "pitfree chm 1 m² cells",
-#       cex.main = 1) 
-
-#- tmap plot
- # tm_shape(seg) +
- #   tmap::tm_polygons( title = "pitfree chm 1 m² cells", 
- #              palette = lidR::height.colors(20)) +
- #  tm_grid()+
- #   tm_layout(legend.outside = TRUE)
-
-#- ggplot plot with stars
-# ggplot() + 
-#   geom_stars(data = stars::st_as_stars(chm)) + 
-#   scale_fill_gradientn(colours=lidR::height.colors(20)) +
-#   coord_equal()+
-#   guides(fill=guide_legend(title="pitfree chm 1 m² cells"))
+ 
  

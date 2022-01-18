@@ -21,13 +21,9 @@ epsg = 25832
 
 # we need a segmented pointcloud if working on tree level
 # trees=lidR::readLAS(file.path(envrmt$path_sapflow,"sapflow_tree_segments_multichm_dalponte2016.las"))
-# we than can caluclate hulls 
-# hulls_sf=st_read(file.path(envrmt$path_sapflow,"sapflow_tree_segments_multichm_dalponte2016.gpkg"))
 
-## extract the values
-#species_ex = exactextractr::exact_extract(filter_treespecies, hulls_sf,  force_df = TRUE,
-#                                         include_cols = "treeID")
-#species_ex = dplyr::bind_rows(species_ex)
+hulls_sf=st_read(file.path(envrmt$path_l_raster,"segmentation_small3.shp"))
+
 
 
 # calculationg and extracting some values  per tree

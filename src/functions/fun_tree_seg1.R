@@ -12,12 +12,16 @@ tree_fn <- function(chunk)
   # #ht_ws_chunk <- lidR::segment_trees(chunk, li2012(R = 3, speed_up = 5), uniqueness = "incremental")
   # trs_chunk <- lidR::filter_poi(las_chunk, !is.na(treeID))
    hulls_chunk <- lidR::delineate_crowns(chunk, type = "concave", concavity = 3, func = .stdmetrics)
-  # 
-  # Removing the buffer is tricky on this one and
-  # this is suboptimal. When used standalone with a
-  # catalog delineate_crowns() does the job better than that
-  hulls_chunk <- raster::crop(hulls_chunk, raster::extent(chunk))
   
+   hulls_chunk@data[,c("x","y")] = sp::coordinates(hulls_chunk)
+   
+   #remove trees with crowns outside extent
+   dat_trs = hulls_chunk@data
+   coordinates(dat_trs) = ~x+y
+   tile0_ext = as(raster::extent(chunk),"SpatialPolygons")
+   in_tile = rgeos::gIntersects(dat_trs, tile0_ext,byid=T)
+   hulls_chunk1 = subset(hulls_chunk,subset=as.vector(in_tile))
+   
   
   return(hulls_chunk)
 }

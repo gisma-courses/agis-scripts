@@ -1,14 +1,11 @@
 #------------------------------------------------------------------------------
 # Type: control script
-# Name: 30_make_simple_plants.R
+# Name: 30_calculate_addon_predictors.R
 # Author: Chris Reudenbach, creuden@gmail.com
-# Description:  derives tree hulls and the corresponding values height, LAD , albedo, transmissivity, 
-#               lucc classes
-# Data: point cloud dsm and dtm 
-#       sentinel 2 bands 2,3,4,8
-# Output: Indices
-# Copyright: Chris Reudenbach 2021, GPL (>= 3)
-# git clone https://github.com/gisma/envimetR.git
+# Description:  derives LAD , albedo, transmissivity
+# Data: point cloud dem chm sentinel 2 bands 2,3,4,8
+# Output: predictor stack
+# Copyright: GPL (>= 3)
 #------------------------------------------------------------------------------
 ### 
 
@@ -21,42 +18,17 @@
 fn = "5-25_MOF_rgb"
 ## ETRS89 / UTM zone 32N
 epsg = 25832
-min_tree_height = 2
-chm=raster(chm)
-
-tree_ws_hull.ctg = function(las, chm=chm, th = 2, tol=0.2,ext=3)
-{
-  catalog_apply(las, tree_ws_hull, chm=chm, th = 2, tol=0.2,ext=3)
-}
-
-tree_ws_hull(norm_ctg,chm=chm, th = 2, tol=0.2,ext=3)
-mapview(st_read(out))
 
 # we need a segmented pointcloud if working on tree level
 # trees=lidR::readLAS(file.path(envrmt$path_sapflow,"sapflow_tree_segments_multichm_dalponte2016.las"))
 # we than can caluclate hulls 
 # hulls_sf=st_read(file.path(envrmt$path_sapflow,"sapflow_tree_segments_multichm_dalponte2016.gpkg"))
 
-# we may use a classificatin  map
-# sapflow_species=readRDS(paste0(envrmt$path_aerial_level0,"sfprediction_ffs_",fn,".rds"))
-# sapflow_species = raster::crop(sapflow_species,extent(477500, 478218, 5631730, 5632500))
-
-# if this map is fuzzy we can filter it ClassificationMapRegularization majority filter
-#otb  = link2GI::linkOTB(searchLocation = "/usr/bin/")
-# assign the prediction stack
-#fbFN = paste0(envrmt$path_aerial,fn,"_majority_in.tif")
-#writeRaster(sapflow_species,fbFN,progress="text",overwrite=TRUE)
-#cmr = parseOTBFunction("ClassificationMapRegularization",otb)
-#cmr$io.in = fbFN
-#cmr$io.out = paste0(envrmt$path_aerial,fn,"_majority_out.tif")
-#cmr$progress = "true"
-#cmr$ip.radius = "1"
-#filter_treespecies = runOTB(cmr,gili = otb,quiet = FALSE,retRaster = TRUE)
-#filter_treespecies=raster(paste0(envrmt$path_aerial,fn,"_majority_out.tif"))
 ## extract the values
 #species_ex = exactextractr::exact_extract(filter_treespecies, hulls_sf,  force_df = TRUE,
 #                                         include_cols = "treeID")
 #species_ex = dplyr::bind_rows(species_ex)
+
 
 # calculationg and extracting some values  per tree
 species_hulls = species_ex %>% group_by(treeID) %>%
@@ -67,14 +39,18 @@ species_sf=species_hulls[,c("treeID","ZTOP","zmax","zmean","zsd","zskew","specie
 st_write(species_hulls,file.path(envrmt$path_level1,"sapflow_tree_segments_multichm_dalponte2016_species.gpkg"),append=FALSE)
 #species_hulls = st_read(file.path(envrmt$path_sapflow ,"sapflow_tree_segments_multichm_dalponte2016_species.gpkg"))
 
+
+# GAP and transmittance metrics
+# https://www.isprs.org/proceedings/xxxvi/3-W52/final_papers/Hopkinson_2007.pdf
+# https://link.springer.com/content/pdf/10.1007%2F978-94-017-8663-8_20.pdf
+#  http://doi.org/10.1016/j.rse.2014.10.004
+gap_tree = tree_metrics(trees, func = ~lidR::gap_fraction_profile(Z))
+gap_tree$gf = gap_tree$gf * 0.8 # 0.8 transmittance coefficient
+plot(gap_tree)
+
 # calculate the LAD metrics for the derived trees
 # review vertical LAI ditribution http://dx.doi.org/10.3390/rs12203457
 lad_tree = tree_metrics(trees, func = ~LAD(Z))
-# GAP and transmittance metrics
-# https://www.isprs.org/proceedings/xxxvi/3-W52/final_papers/Hopkinson_2007.pdf
-gap_tree = tree_metrics(trees, func = ~lidR::gap_fraction_profile(Z))
-gap_tree$gf = gap_tree$gf * 0.8
-plot(gap_tree)
 lt=st_drop_geometry(as(lad_tree,"sf"))
 lad_trees = inner_join(lt,species_sf)
 tmp = lt %>%
@@ -82,9 +58,10 @@ tmp = lt %>%
   spread(z,lad,fill = 0,sep = "_")
 lad_trees =  inner_join(tmp,lad_trees)
 
-# read the setntinel data
-albedo = raster(paste0(envrmt$path_sapflow,"S2B2A_20210613_108_sapflow_BOA_10_albedo.tif"))
+# read sentinel data
 lai = raster(paste0(envrmt$path_sapflow,"2021-06-13-00:00_2021-06-13-23:59_Sentinel-2_L1C_Custom_script.tiff"))
+albedo = raster(paste0(envrmt$path_sapflow,"S2B2A_20210613_108_sapflow_BOA_10_albedo.tif"))
+
 
 ## extract the values
 lai_ex = exactextractr::exact_extract(lai, hulls_sf,  force_df = TRUE,
@@ -129,4 +106,5 @@ lad_pred$treeID = lad$treeID
 trees_all = inner_join(lad_pred,tree_clust)
 trees_all =inner_join(trees_all,tree_tmp )
 trees_all_sf=st_as_sf(trees_all)
+
 st_write(trees_all_sf,file.path(envrmt$path_sapflow,"sapflow_tree_all_sf.gpkg"),append = FALSE)

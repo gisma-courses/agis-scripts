@@ -14,20 +14,17 @@ tree_fn <- function(chunk)
    hulls_chunk <- lidR::delineate_crowns(chunk, type = "concave", concavity = 3, func = .stdmetrics)
   
    hulls_chunk@data[,c("x","y")] = sp::coordinates(hulls_chunk)
-   
    #remove trees with crowns outside extent
    dat_trs = hulls_chunk@data
    coordinates(dat_trs) = ~x+y
    tile0_ext = as(raster::extent(chunk),"SpatialPolygons")
    in_tile = rgeos::gIntersects(dat_trs, tile0_ext,byid=T)
    hulls_chunk1 = subset(hulls_chunk,subset=as.vector(in_tile))
-   
-  
   return(hulls_chunk)
 }
 
 
-filter_noise = function(chunk, sensitivity)
+filter_noise = function(chunk, sensitivity, res)
 {
   attempt_max=5
   for(i in 1:attempt_max){
@@ -37,7 +34,7 @@ filter_noise = function(chunk, sensitivity)
   }
   if (is.empty(las_chunk)) return(NULL)
   
-  p99 = grid_metrics(las_chunk, ~quantile(Z, probs = 0.99), 10)
+  p99 = grid_metrics(las_chunk, ~quantile(Z, probs = 0.99), res)
   las = merge_spatial(las_chunk, p99, "p99")
   las = filter_poi(las, Z < p99*sensitivity)
   las$p99 <- NULL

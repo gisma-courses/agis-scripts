@@ -15,25 +15,23 @@
 
 # 2 - define variables
 #---------------------
-fn = "5-25_MOF_rgb"
-## ETRS89 / UTM zone 32N
-epsg = 25832
 
 # we need a segmented pointcloud if working on tree level
-# trees=lidR::readLAS(file.path(envrmt$path_sapflow,"sapflow_tree_segments_multichm_dalponte2016.las"))
+trees=lidR::readLAS(file.path(envrmt$path_l_raster,"HULL_477875_5632375.laz"))
 
 hulls_sf=st_read(file.path(envrmt$path_l_raster,"segmentation_small3.shp"))
 
 
 
-# calculationg and extracting some values  per tree
-species_hulls = species_ex %>% group_by(treeID) %>%
-  dplyr::summarize(species_median = median(value, na.rm=TRUE),
-                   species_mode = modeest::mlv(value, method='mfv'))
-species_hulls = inner_join(hulls_sf,species_hulls)
-species_sf=species_hulls[,c("treeID","ZTOP","zmax","zmean","zsd","zskew","species_mode","area")]
-st_write(species_hulls,file.path(envrmt$path_level1,"sapflow_tree_segments_multichm_dalponte2016_species.gpkg"),append=FALSE)
-#species_hulls = st_read(file.path(envrmt$path_sapflow ,"sapflow_tree_segments_multichm_dalponte2016_species.gpkg"))
+# # calculationg and extracting some additional metrics per tree
+# species_hulls = species_ex %>% group_by(treeID) %>%
+#   dplyr::summarize(species_median = median(value, na.rm=TRUE),
+#                    species_mode = modeest::mlv(value, method='mfv'))
+# species_hulls = inner_join(hulls_sf,species_hulls)
+
+# # subsetting
+# species_sf=species_hulls[,c("treeID","ZTOP","zmax","zmean","zsd","zskew","species_mode","area")]
+# st_write(species_hulls,file.path(envrmt$path_level1,"sapflow_tree_segments_multichm_dalponte2016_species.gpkg"),append=FALSE)
 
 
 # GAP and transmittance metrics
@@ -54,7 +52,7 @@ tmp = lt %>%
   spread(z,lad,fill = 0,sep = "_")
 lad_trees =  inner_join(tmp,lad_trees)
 
-# read sentinel data
+# optional read sentinel data
 lai = raster(paste0(envrmt$path_sapflow,"2021-06-13-00:00_2021-06-13-23:59_Sentinel-2_L1C_Custom_script.tiff"))
 albedo = raster(paste0(envrmt$path_sapflow,"S2B2A_20210613_108_sapflow_BOA_10_albedo.tif"))
 
@@ -73,7 +71,7 @@ names(alb_ex)=c("treeID","albedo")
 l_trees =  inner_join(lai_ex,lad_trees)
 a_trees = inner_join(alb_ex,l_trees)
 
-# optional and  pretty trickky this part
+# optional add vertical profile data  (pretty tricky)
 # make mean of all unique treeIds and provide vertical LAD
 tree = a_trees %>% group_by(treeID) %>%
   mutate_all(.funs = mean) %>%

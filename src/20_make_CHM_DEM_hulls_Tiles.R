@@ -31,6 +31,9 @@ epsg_number = 25832
 #- tmap options
 tmap_options(check.and.fix = TRUE) 
 
+#- number of cores
+cores = 4L
+
 # 1 - start script
 #-----------------------------
 #- create path link to the original las file
@@ -48,8 +51,8 @@ ctg@output_options$drivers$Raster$param$overwrite <- TRUE
 ctg@output_options$drivers$Vector$param$overwrite <- TRUE
 
 #- parallelisation in this case 16 Cores
-future::plan(multisession, workers = 16L)
-set_lidr_threads(16L)
+future::plan(multisession, workers = cores)
+set_lidr_threads(cores)
 
 
 #- height normalisation within the point cloud

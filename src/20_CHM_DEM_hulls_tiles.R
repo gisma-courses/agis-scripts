@@ -111,11 +111,14 @@ if (calculate){
   tm_shape(seg) + tm_fill(col = "zq95") 
   mapview(seg,zcol="zq95", fgb = FALSE)
   
-  # gridmetrics
+  #- gridmetrics 
+  # NOTE: the metrics is performed on the manipulated (see above) ctg! 
+  # So the results will differ from the raw lasfile/ctg
   sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
   raster::writeRaster(sapflow_metrics,paste0(envrmt$path_l_raster,"/segmentation_sapflow.tif"))
   tmap_mode("view")
   mapview(sapflow_metrics) 
+  
 } else {
   dem = raster::raster(paste0(envrmt$path_l_raster,"/grid_terrain.vrt"))
   chm = raster(paste0(envrmt$path_l_raster,"/grid_canopy.vrt"))

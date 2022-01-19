@@ -1,7 +1,6 @@
 #------------------------------------------------------------------------------
 # Type: control script
 # Name: 30_calculate_addon_predictors.R
-# Author: Chris Reudenbach, creuden@gmail.com
 # Description:  derives LAD , albedo, transmissivity
 # Data: point cloud dem chm sentinel 2 bands 2,3,4,8
 # Output: predictor stack

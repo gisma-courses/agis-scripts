@@ -79,7 +79,7 @@ traintmp$class = trainDF$class
 
 ##--- remove rows with NA
 traintmp = traintmp[complete.cases(traintmp) ,]
-traintmp = traintmp[ ,colSums(is.na(traintmp)) == 0]
+traintmp = traintmp[ ,rowSums(is.na(traintmp)) == 0]
 
 ##--- now find and eventually remaining linear combinations of columns
 cinfo = findLinearCombos(traintmp[, which(!names(traintmp) %in% c("class"))])

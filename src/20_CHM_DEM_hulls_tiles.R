@@ -26,85 +26,87 @@ source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000-rs
 # logical switch 
 # if TRUE the calculation is performed 
 # if FALSE the results are loaded into memory
-calculate = FALSE
+calculate = TRUE
 
 #- define current projection ETRS89 / UTM zone 32N
-proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+proj4 = "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs"
 epsg_number = 25832
-
+prefix="MOF_lidar_2018"
 #- tmap options
 tmap_options(check.and.fix = TRUE) 
 
-#- number of cores
-cores = 4L
+res = 2.0
+
+#- parallelisation in this case 16 Cores
+
+future::plan(multisession, workers = 6)
+set_lidr_threads(6)
+
 #------------------------------------------------------------------------------
 # 1 - start processing
 #-----------------------------
 if (calculate){
   #- create path link to the original las file
-  las_file = paste0(envrmt$path_l_raw,"/las_mof.las")
+  las_file = paste0(envrmt$path_l_raw,"/MOF_lidar_2018.las")
   
   #- define lidR catalog
   #- general catalog settings
   ctg <- lidR::readLAScatalog(las_file)
   projection(ctg) <- 25832
-  lidR::opt_chunk_size(ctg) = 250
-  lidR::opt_chunk_buffer(ctg) <- 10
+  lidR::opt_chunk_size(ctg) = 500
+  lidR::opt_chunk_buffer(ctg) <- 50
   lidR::opt_progress(ctg) <- TRUE
   lidR::opt_laz_compression(ctg) <- TRUE
   ctg@output_options$drivers$Raster$param$overwrite <- TRUE
   ctg@output_options$drivers$Vector$param$overwrite <- TRUE
   
-  #- parallelisation in this case 16 Cores
-  future::plan(multisession, workers = cores)
-  set_lidr_threads(cores)
-  
-  
+
   #- height normalisation within the point cloud
   # source: https://github.com/Jean-Romain/lidR/wiki/Rasterizing-perfect-canopy-height-models
   # calculate dem
-  lidR::opt_output_files(ctg) <- paste0(envrmt$path_l_raster,"/{ID}","_dsm")
-  dem <- grid_terrain(ctg, res = 1.0,lidR::knnidw(k = 6L, p = 2))
+  lidR::opt_output_files(ctg) <- paste0(envrmt$path_l_raster,"/",prefix,"/{ID}","_dsm")
+  dem <- grid_terrain(ctg, res = res,lidR::knnidw(k = 6L, p = 2))
   
   
   
   #- normalize height (point cloud)
-  lidR::opt_output_files(ctg) <- paste0(envrmt$path_l_norm,"/{ID}","_norm_height")
-  ctg <- lidR::normalize_height(ctg,lidR::tin())
+  lidR::opt_output_files(ctg) <- paste0(envrmt$path_l_norm,"/",prefix,"/{ID}","_norm_height")
+  ctg <- lidR::normalize_height(ctg,lidR::knnidw())
   
   #- calculate chm
-  lidR::opt_output_files(ctg) <- paste0(envrmt$path_l_raster,"/{ID}","_chm")
-  chm <- grid_canopy(ctg, res = 5.0, lidR::pitfree(thresholds = c(0,2,5,10,15), c(0,1.5)))
-  
-  
+  lidR::opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/",prefix,"/{ID}","_chm")
+  chm = grid_canopy(ctg, res = res, lidR::dsmtin())
+  ttops_chm = find_trees(chm, lmf(8))
+  algo1 = dalponte2016(chm, ttops_chm,th_seed = 0.55,th_tree = 0.65,max_cr = 8)
+  algo2 = silva2016(chm, ttops_chm,exclusion = 0.5)
+  algo3 = li2012(hmin = 5, R = 5)
   
   #--- tree segmentation based on the point cloud using catalog
   # source: https://gis.stackexchange.com/questions/364546/individual-tree-segmentation-workflow-with-lidr-package
   
   #- catalog modifications
-  opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/HULL_{XCENTER}_{YCENTER}")
-  opt_chunk_buffer(ctg) = 20
+  opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/",prefix,"/HULL_{XCENTER}_{YCENTER}")
   opt_chunk_size(ctg) = 0
   opt_filter(ctg) <- "filter_noise(ctg, sensitivity = 1.2, res = 5)"
   
   #- tree segmentation using the 99 percentile filter
-  ctg = lidR::segment_trees(ctg,  li2012(dt1 = 1.4, dt2 = 1.9, hmin = 5, R = 5) , uniqueness = "bitmerge")
-  laz = do.call(rbind, lapply(list.files(envrmt$path_l_raster, pattern = "*.laz", full.names = TRUE),readLAS))
-  plot(laz,color = "treeID")
+  ctg = lidR::segment_trees(ctg,  algo1 , uniqueness = "bitmerge")
+  #laz = do.call(rbind, lapply(list.files(paste0(envrmt$path_l_raster,"/",prefix), pattern = "*.laz", full.names = TRUE),readLAS))
+  #plot(laz,color = "treeID")
   saveRDS(ctg,paste0(envrmt$path_lidar,"/ctg.rds"))
   
   
   #- tree filtering and calculate hull 
   opt_filter(ctg) <- "!is.na(treeID)"
   ctg@output_options$drivers$Spatial$extension = ".shp"
-  opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/HULL_sapflow_{XCENTER}_{YCENTER}")
+  opt_output_files(ctg) = paste0(envrmt$path_l_raster,"/",prefix,"/HULL_sapflow_{XCENTER}_{YCENTER}")
   hulls = catalog_apply(ctg=ctg, FUN = tree_fn)
   
   #- merge shapefiles
-  # file_list <- list.files(envrmt$path_l_raster, pattern = "HULL4_*.shp", full.names = TRUE)
+  #hulls <- list.files(paste0(envrmt$path_l_raster,"/",prefix), pattern = "*.shp", full.names = TRUE)
   seg = do.call(rbind, lapply(hulls, read_sf))
-  st_write(seg,paste0(envrmt$path_l_raster,"/segmentation_sapflow.shp"))
-  plot(st_geometry(seg))
+  st_write(seg,paste0(envrmt$path_l_raster,"/",prefix,"/segmentation_sapflow.shp"),append=F)
+  #plot(st_geometry(seg))
   
   #- tmap plot
   tmap_mode("view")
@@ -115,14 +117,14 @@ if (calculate){
   # NOTE: the metrics is performed on the manipulated (see above) ctg! 
   # So the results will differ from the raw lasfile/ctg
   sapflow_metrics <- grid_metrics(ctg, .stdmetrics, 5)
-  raster::writeRaster(sapflow_metrics,paste0(envrmt$path_l_raster,"/segmentation_sapflow.tif"))
+  raster::writeRaster(sapflow_metrics,paste0(envrmt$path_l_raster,"/",prefix,"/segmentation_sapflow.tif"))
   tmap_mode("view")
   mapview(sapflow_metrics) 
   
 } else {
-  dem = raster::raster(paste0(envrmt$path_l_raster,"/grid_terrain.vrt"))
-  chm = raster(paste0(envrmt$path_l_raster,"/grid_canopy.vrt"))
+  dem = raster::raster(paste0(envrmt$path_l_raster,"/",prefix,"/grid_terrain.vrt"))
+  chm = raster(paste0(envrmt$path_l_raster,"/",prefix,"/grid_canopy.vrt"))
   ctg = readRDS(paste0(envrmt$path_lidar,"/ctg.rds"))
-  trees = st_read(paste0(envrmt$path_l_raster,"/segmentation_sapflow.shp"))
-  sapflow_metrics = raster::stack(paste0(envrmt$path_l_raster,"/segmentation_sapflow.tif"))
+  trees = st_read(paste0(envrmt$path_l_raster,"/",prefix,"/segmentation_sapflow.shp"))
+  sapflow_metrics = raster::stack(paste0(envrmt$path_l_raster,"/",prefix,"/segmentation_sapflow.tif"))
 }

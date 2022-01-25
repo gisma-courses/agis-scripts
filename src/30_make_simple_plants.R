@@ -37,6 +37,7 @@ hulls_sf=st_read(file.path(envrmt$path_l_raster,"segmentation_small3.shp"))
 # https://www.isprs.org/proceedings/xxxvi/3-W52/final_papers/Hopkinson_2007.pdf
 # https://link.springer.com/content/pdf/10.1007%2F978-94-017-8663-8_20.pdf
 #  http://doi.org/10.1016/j.rse.2014.10.004
+
 gap_tree = tree_metrics(trees, func = ~lidR::gap_fraction_profile(Z))
 gap_tree$gf = gap_tree$gf * 0.8 # 0.8 transmittance coefficient
 plot(gap_tree)
@@ -45,34 +46,34 @@ plot(gap_tree)
 # review vertical LAI ditribution http://dx.doi.org/10.3390/rs12203457
 lad_tree = tree_metrics(trees, func = ~LAD(Z))
 lt=st_drop_geometry(as(lad_tree,"sf"))
-lad_trees = inner_join(lt,species_sf)
-tmp = lt %>%
-  group_by(treeID,z) %>%
-  spread(z,lad,fill = 0,sep = "_")
-lad_trees =  inner_join(tmp,lad_trees)
+# lad_trees = inner_join(lt,species_sf)
+# tmp = lt %>%
+#   group_by(treeID,z) %>%
+#   spread(z,lad,fill = 0,sep = "_")
+# lad_trees =  inner_join(tmp,lad_trees)
 
 # optional read sentinel data
-lai = raster(paste0(envrmt$path_sapflow,"2021-06-13-00:00_2021-06-13-23:59_Sentinel-2_L1C_Custom_script.tiff"))
-albedo = raster(paste0(envrmt$path_sapflow,"S2B2A_20210613_108_sapflow_BOA_10_albedo.tif"))
+# lai = raster(paste0(envrmt$path_sapflow,"2021-06-13-00:00_2021-06-13-23:59_Sentinel-2_L1C_Custom_script.tiff"))
+# albedo = raster(paste0(envrmt$path_sapflow,"S2B2A_20210613_108_sapflow_BOA_10_albedo.tif"))
 
 
 ## extract the values
-lai_ex = exactextractr::exact_extract(lai, hulls_sf,  force_df = TRUE,
-                                      include_cols = "treeID")
-lai_ex = dplyr::bind_rows(lai_ex)
-lai_ex$coverage_fraction=NULL
-names(lai_ex)=c("treeID","lai")
-alb_ex = exactextractr::exact_extract(albedo, hulls_sf,  force_df = TRUE,
-                                      include_cols = "treeID",)
-alb_ex = dplyr::bind_rows(alb_ex)
-alb_ex$coverage_fraction=NULL
-names(alb_ex)=c("treeID","albedo")
-l_trees =  inner_join(lai_ex,lad_trees)
-a_trees = inner_join(alb_ex,l_trees)
+# lai_ex = exactextractr::exact_extract(lai, hulls_sf,  force_df = TRUE,
+#                                       include_cols = "treeID")
+# lai_ex = dplyr::bind_rows(lai_ex)
+# lai_ex$coverage_fraction=NULL
+# names(lai_ex)=c("treeID","lai")
+# alb_ex = exactextractr::exact_extract(albedo, hulls_sf,  force_df = TRUE,
+#                                       include_cols = "treeID",)
+# alb_ex = dplyr::bind_rows(alb_ex)
+# alb_ex$coverage_fraction=NULL
+# names(alb_ex)=c("treeID","albedo")
+# l_trees =  inner_join(lai_ex,lad_trees)
+# a_trees = inner_join(alb_ex,l_trees)
 
 # optional add vertical profile data  (pretty tricky)
 # make mean of all unique treeIds and provide vertical LAD
-tree = a_trees %>% group_by(treeID) %>%
+tree = lt %>% group_by(treeID) %>%
   mutate_all(.funs = mean) %>%
   distinct(.keep_all = TRUE)
 tree$geom =NULL

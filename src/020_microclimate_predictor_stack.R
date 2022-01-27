@@ -22,7 +22,7 @@
 # ----project setup----
 require(envimaR)
 # MANDANTORY: defining the root folder DO NOT change this line
-root_folder = "~/edu/courses/misc/MicroclimateMOF"
+root_folder = "~/edu/agis"
 # work around for a subproject folder
 prefix = "MOF_lidar_2018"
 
@@ -37,18 +37,18 @@ appendProjectDirList =  c(paste0(tmpPath,"gmetrics"),paste0(tmpPath,"tmetrics"),
 
 
 # MANDANTORY: calling the setup script also DO NOT change this line
-source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000_setup.R"),local = knitr::knit_global())
+source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000-rspatial-setup.R"))
 
 
 # ---additional variables----
 # logical switch 
 # if TRUE the calculation is performed 
 # if FALSE the results are loaded into memory
-calculate = TRUE
+calculate = FALSE
 # GRASS irridiance calculation
 sol = FALSE
 # read only forest structure stack 
-fs_only = TRUE
+fs_only = FALSE
 
 #- define current projection ETRS89 / UTM zone 32N
 proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
@@ -282,8 +282,8 @@ if (calculate){
   t_cluster = t_cluster[,  !(names(t_cluster) %in% "geometry")]
   t_cluster = t_cluster[complete.cases(t_cluster) ,]
   tree_clust_sf = st_as_sf(t_cluster,coords = c("x", "y"), crs = epsg_number)
-  sf::st_write(tree_clust_sf,file.path(paste0(envrmt$path_gmetrics,"/tree_cluster.gpkg")), append= FALSE)
-  saveRDS(t_cluster,file.path(paste0(envrmt$path_gmetrics,"/tree_cluster.rds")))
+  sf::st_write(tree_clust_sf,file.path(paste0(envrmt$path_tmetrics,"/tree_cluster.gpkg")), append= FALSE)
+  saveRDS(t_cluster,file.path(paste0(envrmt$path_tmetrics,"/tree_cluster.rds")))
   
   ## ----14. voronoi tesselation of the tree stands----
   t_clust <- vect(tree_clust_sf)
@@ -299,8 +299,8 @@ if (calculate){
   # depreceated use tree clusters from envimetR/src/90_tree_cluser_analysis
   # tree_clust_sf <- st_read(file.path(envrmt$path_level2,"sapflow_tree_all_cluster_sf.gpkg"))
   
-  tree_clust_rast <- gdalUtils::gdal_rasterize(src_datasource = paste0(envrmt$path_tmetrics,"/sf_voronoi.gpkg"),
-                                               dst_filename = file.path(envrmt$path_tmetrics,"/all_seg.tif"),
+  tree_clust_rast <- gdalUtils::gdal_rasterize(src_datasource = file.path(envrmt$path_tmetrics,"sf_voronoi.gpkg"),
+                                               dst_filename = file.path(envrmt$path_tmetrics,"voronoi.tif"),
                                                a = c("cluster"),
                                                l = "sf_voronoi",
                                                a_nodata = 0,
@@ -313,7 +313,7 @@ if (calculate){
                                                output_Raster = TRUE
   )
   
-  tree_clust_rast <- raster::stack(file.path(envrmt$path_tmetrics, "/all_seg.tif"))
+  tree_clust_rast <- raster::stack(file.path(envrmt$path_tmetrics, "/voronoi.tif"))
   # plot(tree_clust_rast)
   
   ## ----16. ipground----
@@ -344,79 +344,64 @@ if (calculate){
   ## ----19 calculate irradiance----
   if (sol)
   {
+    rgrass7::use_sp()
     # irradiance is calculated with the GRASS GIS function r.sun.hourly
-    # if (sol)
-    {# Better the DSM
-      # in order to be able to access GRASS from R, Rstudio needs to be opened  from osgeo4w command shell with
-      # "C:\Program Files\RStudio\bin\rstudio.exe"
+    link2GI::linkGRASS7(dsm, gisdbase = envrmt$path_GRASS, location = "MOF")
+    # import dem
+    rgrass7::execGRASS("r.in.gdal", 
+                       flags = "o",
+                       parameters = list(
+                         input = file.path(paste0(envrmt$path_dsm,"/grid_canopy.vrt")),
+                         output = "dsm"
+                       ))
+    
+    
+    # import topo pred
+    rgrass7::execGRASS("r.in.gdal", 
+                       flags = "o",
+                       parameters = list(
+                         input = file.path(envrmt$path_dem,"/pred_topo.tif"),
+                         output = "pred_topo"
+                       ))
+    
+    # set extent of the region to the extent of the dtm
+    rgrass7::execGRASS("g.region", 
+                       parameters = list(raster = "dsm"))
+    
+    # install r.sun.hourly
+    rgrass7::execGRASS("g.extension",
+                       parameters = list(extension = "r.sun.hourly"))
+    
+    
+    # calculate hourly irradiance for the whole study period
+ 
+    cl <- makePSOCKcluster(30)
+    registerDoParallel(cl)
+    foreach::foreach (i = 151:274,.packages='rgrass7') %dopar% {
       
-      #Sys.getenv("PROJ_USER_WRITABLE_DIRECTORY")
-      #Sys.setenv("PROJ_SUER_WRTIABLE_DIRECTORY" = "C:\\OSGEO4W64\\share\\proj")
-      
-      
-      link2GI::linkGRASS7(dem, gisdbase = root_folder, location = "MOF2")
-      # rgrass7::initGRASS(gisBase = "C:/OSGEO4W64/apps/grass/grass78",
-      #                    gisDbase = "D:/Uni_Marburg/Arbeit/data/GRASS",
-      #                    location = "MOF",
-      #                    mapset = "PERMANENT",
-      #                    override = TRUE)
-      
-      # rgrass7::execGRASS('g.proj',
-      #                    flags = "p")
-      # 
-      # import dtm
-      rgrass7::execGRASS("r.in.gdal", 
-                         flags = "o",
-                         parameters = list(
-                           input = file.path(envrmt$path_level2, "dem.tif"),
-                           output = "dtm"
-                         ))
-      
-      rgrass7::execGRASS("r.info", 
-                         parameters = list(map = "dtm"))
-      
-      # import topo pred
-      rgrass7::execGRASS("r.in.gdal", 
-                         flags = "o",
-                         parameters = list(
-                           input = file.path(envrmt$path_level2, "pred_topo.tif"),
-                           output = "pred_topo"
-                         ))
-      
-      rgrass7::execGRASS("r.info", 
-                         parameters = list(map = "pred_topo.1"))
-      
-      # set extent of the region to the extent of the dtm
-      rgrass7::execGRASS("g.region", 
-                         parameters = list(raster = "dtm"))
-      
-      # install r.sun.hourly
-      rgrass7::execGRASS("g.extension",
-                         parameters = list(extension = "r.sun.hourly"))
-      
-      
-      # calculate hourly irradiance for the whole study period
-      for (i in 151:274) {
-        
-        output <- paste("tot_rad_", i, sep = "")
-        rgrass7::execGRASS("r.sun.hourly", flags=c("overwrite", "quiet"), elevation="pred_topo.1", aspect="pred_topo.3", slope="pred_topo.2", mode="mode1",
-                           start_time=0, end_time=23, day=i, year=1900, glob_rad_basename=output)
-      }
-      
-      # the resulting files are not stored as rasters but in a GRASS format
-      # for further analysis the radiation files will be loaded indivdually as rasters when needed
+      output <- paste("tot_rad_", i, sep = "")
+      rgrass7::execGRASS("r.sun.hourly", 
+                         flags=c("overwrite", "verbose"), 
+                         elevation="pred_topo.1", 
+                         aspect="pred_topo.3", 
+                         slope="pred_topo.2", 
+                         mode="mode1",
+                         start_time=0, end_time=23, day=i, year=2020, 
+                         glob_rad_basename=output)
     }
+    stopCluster(cl)
+    
+    # the resulting files are not stored as rasters but in a GRASS format
+    # for further analysis the radiation files will be loaded indivdually as rasters when needed
   }
-  
 } else {
-  if (fs_only) 
-  {
+  if (fs_only)  {
     forest_structure = readRDS(file.path(envrmt$path_MOF_lidar_2018, "/pred_forest_structure.rds"))
   } else {
     forest_structure = readRDS(file.path(envrmt$path_MOF_lidar_2018, "/pred_forest_structure.rds"))    
-    trees_cluster = sf::st_read(file.path(paste0(envrmt$path_MOF_lidar_2018,"/tree_cluster.gpkg")))
+    trees_cluster = sf::st_read(file.path(paste0(envrmt$path_gmetrics,"/tree_cluster.gpkg")))
     dem = raster::raster(paste0(envrmt$path_dem,"/grid_terrain.vrt"))
-    dsm = raster::raster(paste0(envrmt$path_dsm,"/grid_terrain.vrt"))
+    dsm = raster::raster(paste0(envrmt$path_dsm,"/grid_canopy.vrt"))
     chm = raster::raster(paste0(envrmt$path_chm,"/grid_canopy.vrt"))
     ctg = readRDS(paste0(envrmt$path_MOF_lidar_2018,"/ctg.rds"))
     trees = st_read(paste0(envrmt$path_MOF_lidar_2018,"/seg/segmentation.shp"))

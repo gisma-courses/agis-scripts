@@ -18,17 +18,18 @@ require(envimaR)
 
 # rspatial packages
 packagesToLoad = c("mapview", "mapedit", "tmap", "raster", "terra", "stars", "gdalcubes", "sf","dplyr","tidyverse","RStoolbox",
-                   "randomForest", "ranger", "e1071", "caret", "link2GI")
+                   "randomForest", "ranger", "e1071", "caret", "link2GI","rgrass7","doParallel","foreach")
 
 
 # mandantory folder structure
 projectDirList   = c("data/",               # data folders the following are obligatory but you may add more
-                     "data/data_lev0",       # data for level 0 raw or original data
-                     "data/data_lev1",       # data for level 1 cleaned data
-                     "data/data_lev2",       # data for level 2 raw or output/productdata
+                     "data/data_lev0/",       # data for level 0 raw or original data
+                     "data/data_lev1/",       # data for level 1 cleaned data
+                     "data/data_lev2/",       # data for level 2 raw or output/productdata
                      "run/",                # temporary runtime data storage
+                     "GRASS/",               # GRASS folder
                      "src/",                # scripts and source code; NOTE the subfolder called functions is genereated by default
-                     "tmp",                 # all kind or rsession temporary stuff
+                     "tmp/",                 # all kind or rsession temporary stuff
                      "doc/")                # documentation and markdown
 
 

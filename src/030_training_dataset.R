@@ -1,4 +1,4 @@
-#------------------------------------------------------------------------------
+#
 # Name: 30_training_dataset
 # Author: Lena Perzlmaier, Chris Reudenbach
 # Description:  creates the training data frame
@@ -10,7 +10,7 @@
 # Output: - pred_stack "C:/Users/Lena/Documents/edu/mpg-envinsys-plygrnd/data/predictors/mc_pred_stack.tif"
 #         - trainDF "C:/Users/Lena/Documents/edu/mpg-envinsys-plygrnd/data/auxdata/trainDFmc.rds"
 # 
-#------------------------------------------------------------------------------
+#
 
 # ---- project setup ----
 require(envimaR)
@@ -49,32 +49,31 @@ trainSites = st_transform(trainSites,crs = 25832)
 topo <- stack(file.path(envrmt$path_dem,"pred_topo.tif"))
 forest <- readRDS(file.path(envrmt$path_MOF_lidar_2018,"pred_forest_structure.rds"))
 
-# Klimastation Grubenwiese
+# climate station Grubenwiese
+# data
 clim_stat <- readRDS(file.path(envrmt$path_measurements, "klimastation_wiese_hourly.rds"))
-# coordinate of the climate station
+# location coordinate of the climate station
 cstation = st_sfc(st_point(cbind(8.6832, 50.8405)),crs = 4326)
 cstation = st_transform(st_sf(data.frame(tree_id="grubenwiese", geom=cstation)),crs = 25832)
 
 
-# ---- 2 - run code ----
+# ---- 2  run code ----
 
 # ---- 2.1 - stack raster ----
 pred_stack <- stack(topo, forest)
 names(pred_stack)[1:4] = c("dtm", "slope", "aspect", "TPI")
 
 # save pred_stack
-# writeRaster(pred_stack, file.path(envrmt$path_data_lev2, "mc_pred_stack.tif"), overwrite = TRUE)
-# pred_stack <- stack(file.path(envrmt$path_data_lev2, "mc_pred_stack.tif"))
+saveRDS(pred_stack, file.path(envrmt$path_MOF_lidar_2018, "mc_pred_stack.rds"))
+
 
 # ---- 2.2 - prepare trainDF ----
-
-# day of the year
+# day 
 trainDF$doy <- as.numeric(as.character(trainDF$date, format = "%j"))
 # hour
 trainDF$hour <- as.numeric(substr(trainDF$date, 12, 13))
 
 # ---- 2.3 - prepare trainSites ----
-
 # relevant tree IDs 
 IDs <- unique(trainDF$cst_id)
 
@@ -82,7 +81,7 @@ IDs <- unique(trainDF$cst_id)
 trainSites <- filter(trainSites, trainSites$tree_id %in% IDs)
 trainSites <- st_crop(trainSites, raster::extent(forest))
 
-mapview(pred_stack[[1]],fgb=F)+ trainSites
+# mapview(pred_stack[[1]],fgb=F)+ trainSites
 
 # ---- 2.4 - extract data ----
 extr = exactextractr::exact_extract(pred_stack, st_buffer(trainSites,dist = 1),  force_df = TRUE,
@@ -92,12 +91,12 @@ extr = filter(extr, coverage_fraction > 0.9)
 trainDF <- merge(trainDF, extr, by.x="cst_id", by.y="tree_id")
 # less observation than before because cst_id with NAs where removed
 
-# --- 2.5 - merge with climate station data ----
+# ---- 2.5 - merge with climate station data ----
 trainDF <- merge(trainDF, clim_stat, by.x = "date", by.y = "date_time_hourly")
 # add label col
 trainDF <- trainDF %>% mutate(doy_hour_id = paste(doy, hour, cst_id,  sep = "_"))
 
-# --- 2.6 get GRASS radiation information ----
+# ---- 2.6 get GRASS radiation information ----
 
 use_sp()
 link2GI::linkGRASS7(pred_stack, gisdbase = envrmt$path_GRASS, location = "MOF")
@@ -174,6 +173,7 @@ saveRDS(cld, file.path(envrmt$path_data, "rad_clim_station.rds"))
 
 trainDF <- merge(trainDF, cld, by = c("doy", "hour"))
 plot(trainDF$rad_Klimastation, trainDF$rad_sw_in)
+# ---- save training data frame ----
 saveRDS(trainDF, file.path(envrmt$path_auxdata, "trainDFmc.rds"))
 
 #trainDF <- readRDS(file.path(envrmt$path_auxdata, "trainDFmc_fullextent.rds"))

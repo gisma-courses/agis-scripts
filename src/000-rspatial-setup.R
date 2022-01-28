@@ -26,6 +26,8 @@ projectDirList   = c("data/",               # data folders the following are obl
                      "data/data_lev0/",       # data for level 0 raw or original data
                      "data/data_lev1/",       # data for level 1 cleaned data
                      "data/data_lev2/",       # data for level 2 raw or output/productdata
+                     "data/measurements/",
+                     "data/auxdata/",
                      "run/",                # temporary runtime data storage
                      "GRASS/",               # GRASS folder
                      "src/",                # scripts and source code; NOTE the subfolder called functions is genereated by default

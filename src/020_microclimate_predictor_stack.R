@@ -364,24 +364,21 @@ if (calculate){
                          output = "pred_topo"
                        ))
     
-    # set extent of the region to the extent of the dtm
-    rgrass7::execGRASS("g.region", 
-                       parameters = list(raster = "dsm"))
+    # # set extent of the region to the extent of the dtm
+    # rgrass7::execGRASS("g.region", 
+    #                    parameters = list(raster = "dsm"))
     
     # install r.sun.hourly
     rgrass7::execGRASS("g.extension",
                        parameters = list(extension = "r.sun.hourly"))
-    
-    
+
     # calculate hourly irradiance for the whole study period
- 
     cl <- makePSOCKcluster(30)
     registerDoParallel(cl)
     foreach::foreach (i = 151:274,.packages='rgrass7') %dopar% {
-      
       output <- paste("tot_rad_", i, sep = "")
       rgrass7::execGRASS("r.sun.hourly", 
-                         flags=c("overwrite", "verbose"), 
+                         flags=c("overwrite", "quiet"), 
                          elevation="pred_topo.1", 
                          aspect="pred_topo.3", 
                          slope="pred_topo.2", 

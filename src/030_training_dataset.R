@@ -12,18 +12,15 @@
 # 
 #------------------------------------------------------------------------------
 
-# ---- 1 - load packages----
-
+# ---- project setup ----
 require(envimaR)
 # MANDANTORY: defining the root folder DO NOT change this line
-library(envimaR)
-root_folder = "~/edu/courses/students-blogs/2021_2/mpg-gis-fe-2020-LeniPe/src/Microclimate/"
-
+root_folder = "~/edu/agis"
 # work around for a subproject folder
-prefix = ""
+prefix = "MOF_lidar_2018"
 
 # define  additional packages comment if not needed
-appendpackagesToLoad = c("lidR","future","lwgeom","tmap","dplyr","rgrass7","sp","link2GI")
+appendpackagesToLoad = c("lidR","future","lwgeom","tmap")
 
 # define additional subfolders comment if not needed
 tmpPath = paste0("data/lidar/",prefix,"/") 
@@ -33,55 +30,48 @@ appendProjectDirList =  c(paste0(tmpPath,"gmetrics"),paste0(tmpPath,"tmetrics"),
 
 
 # MANDANTORY: calling the setup script also DO NOT change this line
-source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000_setup.R"))
+source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000-rspatial-setup.R"))
 
+# projection
+proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+epsg = 25832
 
-
+# ---- read preprocessed data ----
 # trainDF
-trainDF <- readRDS(file.path(envrmt$path_measurements_org, "climate_stations_combined.rds"))
+trainDF <- readRDS(file.path(envrmt$path_measurements, "climate_stations_combined.rds"))
 head(trainDF)
 
 # shapefile with tree coordinates
 trainSites <- read_sf(file.path(envrmt$path_auxdata, "core_study_trees.shp"))
+trainSites = st_transform(trainSites,crs = 25832)
 
 # predstack
-topo <- stack(file.path(envrmt$path_data_lev2, "pred_topo.tif"))
-forest <- stack(file.path(envrmt$path_data_lev2, "pred_forest_structure.tif"))
+topo <- stack(file.path(envrmt$path_dem,"pred_topo.tif"))
+forest <- readRDS(file.path(envrmt$path_MOF_lidar_2018,"pred_forest_structure.rds"))
 
 # Klimastation Grubenwiese
-clim_stat <- readRDS(file.path(envrmt$path_measurements_org, "klimastation_wiese_hourly.rds"))
-
-# projection
-proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+clim_stat <- readRDS(file.path(envrmt$path_measurements, "klimastation_wiese_hourly.rds"))
+# coordinate of the climate station
+cstation = st_sfc(st_point(cbind(8.6832, 50.8405)),crs = 4326)
+cstation = st_transform(st_sf(data.frame(tree_id="grubenwiese", geom=cstation)),crs = 25832)
 
 
 # ---- 2 - run code ----
 
-
 # ---- 2.1 - stack raster ----
-
-topo <- raster::crop(topo, raster::extent(forest))
-raster::compareRaster(topo, forest, stopiffalse = FALSE, showwarning = TRUE)
-
 pred_stack <- stack(topo, forest)
-crs(pred_stack) <- proj4
-names(pred_stack) <- c("dtm", "slope", "aspect", "TPI","CHM", "ip_ground", "cluster")
-plot(pred_stack)
+names(pred_stack)[1:4] = c("dtm", "slope", "aspect", "TPI")
 
 # save pred_stack
-writeRaster(pred_stack, file.path(envrmt$path_data_lev2, "mc_pred_stack.tif"), overwrite = TRUE)
-pred_stack <- stack(file.path(envrmt$path_data_lev2, "mc_pred_stack.tif"))
-names(pred_stack) <- c("dtm", "slope", "aspect", "TPI","CHM", "ip_ground", "cluster")
-
+# writeRaster(pred_stack, file.path(envrmt$path_data_lev2, "mc_pred_stack.tif"), overwrite = TRUE)
+# pred_stack <- stack(file.path(envrmt$path_data_lev2, "mc_pred_stack.tif"))
 
 # ---- 2.2 - prepare trainDF ----
 
 # day of the year
 trainDF$doy <- as.numeric(as.character(trainDF$date, format = "%j"))
-
 # hour
 trainDF$hour <- as.numeric(substr(trainDF$date, 12, 13))
-
 
 # ---- 2.3 - prepare trainSites ----
 
@@ -90,130 +80,100 @@ IDs <- unique(trainDF$cst_id)
 
 # filter shapefile to only containt relevant tree IDs
 trainSites <- filter(trainSites, trainSites$tree_id %in% IDs)
-trainSites <- st_transform(trainSites, proj4)
-trainSites <- trainSites[,2]
 trainSites <- st_crop(trainSites, raster::extent(forest))
 
-mapview::mapview(trainSites)
-
-# convert trainSites to sp object
-trainSitesSp <- as(trainSites, Class = "Spatial")
-#plot(trainSites)
-
+mapview(pred_stack[[1]],fgb=F)+ trainSites
 
 # ---- 2.4 - extract data ----
-
-extr <- raster::extract(pred_stack, trainSitesSp, df = TRUE,
-                        cellnumbers=TRUE, sp = TRUE)
-head(extr)
-
-trainDF <- merge(trainDF, extr@data, by.x="cst_id", by.y="tree_id")
+extr = exactextractr::exact_extract(pred_stack, st_buffer(trainSites,dist = 1),  force_df = TRUE,
+                                    include_cell = TRUE,include_xy = TRUE,full_colnames = TRUE,include_cols = "tree_id") 
+extr = dplyr::bind_rows(extr)
+extr = filter(extr, coverage_fraction > 0.9)
+trainDF <- merge(trainDF, extr, by.x="cst_id", by.y="tree_id")
 # less observation than before because cst_id with NAs where removed
 
 # --- 2.5 - merge with climate station data ----
-
 trainDF <- merge(trainDF, clim_stat, by.x = "date", by.y = "date_time_hourly")
+# add label col
+trainDF <- trainDF %>% mutate(doy_hour_id = paste(doy, hour, cst_id,  sep = "_"))
 
-# --- skip point 2.6 and 2.7
-
-
-trainDF <- trainDF %>% mutate(doy_hour_id = paste(doy, hour, cst_id, channel, sep = "_"))
-
-#trainDF <- left_join(trainDF, trainDF2, by = c("doy_hour_id" = "doy_hour_id"))
-
-# --- 2.6 - radiation information ----
+# --- 2.6 get GRASS radiation information ----
 
 use_sp()
-link2GI::linkGRASS7(pred_stack, gisdbase = envrmt$path_GRASS, location = "MOF2")
-
-# initGRASS(gisBase = "C:/OSGEO4W64/apps/grass/grass78",
-#           gisDbase = "C:/Users/Lena/Documents/GIS DataBase/GRASS",
-#           location = "MOF2",
-#           mapset = "mapset")
+link2GI::linkGRASS7(pred_stack, gisdbase = envrmt$path_GRASS, location = "MOF")
 
 doy_hour <- unique(trainDF[,c("doy", "hour")])
 doy_hour$hour_chr <- sprintf("%02d", doy_hour$hour)
 
-rad <- lapply(seq(nrow(doy_hour)), function(i){
-  cat(i, " of ", nrow(doy_hour),"\n")   
+
+cl <- makeCluster(detectCores() - 2)
+registerDoParallel(cl)
+rad <- foreach(i = seq(nrow(doy_hour)),.packages=c("raster","rgrass7","dplyr","sf","exactextractr"),.verbose = TRUE) %dopar% {
+  use_sp()
   file_name <- paste("tot_rad_", doy_hour[i,1], "_", doy_hour[i,3], ".00", sep = "")
-  
   ras <- raster(rgrass7::readRAST(file_name))
-  
   cst_ids <- filter(trainDF, doy == doy_hour[i,1] & hour == doy_hour[i,2])
   cst_ids <- unique(cst_ids$cst_id)
-  
   trainSites_filtered <- filter(trainSites, tree_id %in% cst_ids)
-  trainSites_filtered <- as(trainSites_filtered, Class = "Spatial")
+  extr = exactextractr::exact_extract(ras, st_transform(st_buffer(trainSites_filtered,dist = 2.),crs = st_crs(ras)),
+                                      force_df = TRUE,
+                                      include_cols = "tree_id",
+                                      include_area =T) 
+  extr = dplyr::bind_rows(extr) %>%
+    filter(coverage_fraction >= 1) %>% 
+    group_by(tree_id) %>% 
+    summarise(mean = mean(value), n = n())
   
-  #plot(raster)
-  #plot(trainSites_filtered, add = TRUE)
-  
-  extr <- raster::extract(ras, trainSites_filtered, df = TRUE,
-                          cellnumbers=TRUE, sp = TRUE)
-  #head(extr)
-  
-  df <- data.frame(cst_id = extr@data$tree_id,
+  df <- data.frame(cst_id = extr$tree_id,
                    doy = doy_hour[i,1],
                    hour = doy_hour[i,2],
-                   rad = extr@data[,3])
-  
-})
-
+                   rad = extr$mean)
+}
+stopCluster(cl)
 rad <- do.call("rbind", rad)
 
+# merge results with trainDF
+trainDF <- merge(trainDF, rad, by = c("cst_id", "doy", "hour"))
 plot(rad$hour, rad$rad)
 
-# merge with trainDF
-
-trainDF <- merge(trainDF, rad, by = c("cst_id", "doy", "hour"))
-
 ## ---- 2.7 - cloudiness ----
-
+# do the same with  cloudiness
 # day of the year
 clim_stat$doy <- as.numeric(as.character(clim_stat$date_time_hourly, format = "%j"))
 
 # hour
 clim_stat$hour <- as.numeric(substr(clim_stat$date_time_hourly, 12, 13))
-
 doy_hour <- unique(clim_stat[,c("doy", "hour")])
 doy_hour$hour_chr <- sprintf("%02d", doy_hour$hour)
 
-clim_stat_sp <- SpatialPoints(coords = cbind(8.6832, 50.8405),
-                              proj4string = CRS("+proj=longlat +datum=WGS84"))
-clim_stat_sp <- spTransform(clim_stat_sp, proj4)
-
-
-rad <- lapply(seq(nrow(doy_hour)-1), function(i){
-  
+cl <- makeCluster(detectCores() - 2)
+registerDoParallel(cl)
+cld = foreach(i =  seq(nrow(doy_hour)-1), .packages=c("raster","rgrass7","sf","exactextractr","dplyr"),.verbose = TRUE) %dopar% {
+  use_sp()
   file_name <- paste("tot_rad_", doy_hour[i,1], "_", doy_hour[i,3], ".00", sep = "")
+  ras <- raster::raster(rgrass7::readRAST(file_name))
+  extr = exactextractr::exact_extract(ras, st_transform(st_buffer(cstation,dist = 2.),crs = st_crs(ras)),
+                                      force_df = TRUE,
+                                      include_cols = "tree_id",
+                                      include_area =T) 
+  extr = dplyr::bind_rows(extr) %>%
+    filter(coverage_fraction >= 1) %>% 
+    group_by(tree_id) %>% 
+    summarise(mean = mean(value), n = n())
   
-  raster <- raster(readRAST(file_name))
-  
-  extr <- raster::extract(raster, clim_stat_sp, df = TRUE)
-  #head(extr)
-  
-  df <- data.frame(doy = doy_hour[i,1],
+  df <- data.frame(cst_id = extr$tree_id,
+                   doy = doy_hour[i,1],
                    hour = doy_hour[i,2],
-                   rad = extr[,2])
-  
-})
+                   rad = extr$mean
+  )}
+stopCluster(cl)
+cld <- do.call("rbind", cld)
+plot(cld$hour, cld$rad)
+colnames(cld) <- c("cst_id","doy", "hour", "rad_Klimastation")
+saveRDS(cld, file.path(envrmt$path_data, "rad_clim_station.rds"))
 
-rad <- do.call("rbind", rad)
-
-saveRDS(rad, file.path(envrmt$path_data, "rad_clim_station.rds"))
-
-plot(rad$hour, rad$rad)
-
-colnames(rad) <- c("doy", "hour", "rad_Klimastation")
-
-trainDF <- merge(trainDF, rad, by = c("doy", "hour"))
-
+trainDF <- merge(trainDF, cld, by = c("doy", "hour"))
 plot(trainDF$rad_Klimastation, trainDF$rad_sw_in)
-
-
-
-## ---- 3 - export train df ----
-
 saveRDS(trainDF, file.path(envrmt$path_auxdata, "trainDFmc.rds"))
-trainDF <- readRDS(file.path(envrmt$path_auxdata, "trainDFmc_fullextent.rds"))
+
+#trainDF <- readRDS(file.path(envrmt$path_auxdata, "trainDFmc_fullextent.rds"))

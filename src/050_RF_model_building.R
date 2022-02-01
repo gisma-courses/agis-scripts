@@ -7,31 +7,39 @@
 
 # --- 0 - load packages ----
 
-library(CAST)
-library(caret)
-library(doParallel)
-library(sperrorest)
-library(dplyr)
-#library(lattice)
+# ---- project setup ----
+require(envimaR)
+# MANDANTORY: defining the root folder DO NOT change this line
+root_folder = "~/edu/agis"
+# work around for a subproject folder
+prefix = "MOF_lidar_2018"
 
-# --- 1 - source files ----
+# define  additional packages comment if not needed
+appendpackagesToLoad = c("lidR","future","lwgeom","sperrorest","doParallel","CAST")
 
-root_folder = "D:/Uni_Marburg/Arbeit"
-source(file.path(root_folder, "/MicroclimateMOF/src/000_setup.R"))
+# define additional subfolders comment if not needed
+tmpPath = paste0("data/lidar/",prefix,"/") 
+appendProjectDirList =  c(paste0(tmpPath,"gmetrics"),paste0(tmpPath,"tmetrics"),
+                          paste0(tmpPath,"dem"),paste0(tmpPath,"dsm"),
+                          paste0(tmpPath,"chm"),tmpPath)
 
-trainDF <- readRDS(file.path(envrmt$path_auxdata, "trainDFmcScaled.rds"))
-trainSites <- read_sf(file.path(envrmt$path_auxdata, "core_study_trees.shp"))
 
-# --- 2 - define variables ----
+# MANDANTORY: calling the setup script also DO NOT change this line
+source(file.path(envimaR::alternativeEnvi(root_folder = root_folder),"src/000-rspatial-setup.R"))
+
+# projection
+proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+epsg = 25832
+
+trainDF = readRDS(file.path(envrmt$path_auxdata, "trainDFmcScaled.rds"))
 
 set.seed(100)
 predictors = names(trainDF[ , !(names(trainDF) %in% c("temp","cst_id","coverage_fraction"))])
  
 response <- "temp"
 
-proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
-cl <- makeCluster(16)
+cl <- makeCluster(24)
 
 
 # --- 3 - start code ----

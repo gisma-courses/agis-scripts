@@ -52,7 +52,8 @@ rad = trainDFclean$rad
 doy_hour_id = trainDFclean$doy_hour_id
 TA_10m = trainDFclean$Ta_10m
 ip_ground = trainDFclean$ip_ground
-
+x = trainDFclean$x
+y = trainDFclean$y
 ##---  cleaning the training data for a random forest model training
 traintmp = trainDFclean[ , !(names(trainDFclean) %in% c("cst_id.y","zq5","WSDiag_2","WSDiag_1","cell","doy_hour_id","Albedo","date","cst_id.x","station_id","channel","n","area","x","y","cell_coverage_fraction","heatflux_soil","cst_id.y"))]
 summary(traintmp)
@@ -101,6 +102,9 @@ traintmp$doy_hour_id = doy_hour_id
 traintmp$rad = rad
 traintmp$Ta_10m = TA_10m
 trainDFclean$ip_ground = ip_ground
+trainDFclean$x = x
+trainDFclean$y = y
+
 
 ##--- remove rows with NA
 traintmp = traintmp[complete.cases(traintmp) ,]

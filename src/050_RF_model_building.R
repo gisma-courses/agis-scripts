@@ -32,7 +32,9 @@ proj4 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84
 epsg = 25832
 
 trainDF = readRDS(file.path(envrmt$path_auxdata, "trainDFmcScaled.rds"))
-
+# shapefile with tree coordinates
+trainSites <- read_sf(file.path(envrmt$path_auxdata, "core_study_trees.shp"))
+trainSites = st_transform(trainSites,crs = 25832)
 set.seed(100)
 predictors = names(trainDF[ , !(names(trainDF) %in% c("temp","cst_id","coverage_fraction"))])
  
@@ -45,12 +47,12 @@ cl <- makeCluster(24)
 # --- 3 - start code ----
 
 # partition data spatially with partitions_kmeans
-trainSites <- st_transform(trainSites, proj4)
 trainSites <- filter(trainSites, trainSites$tree_id %in% trainDF$cst_id)
 xy <- as.data.frame(st_coordinates(trainSites))
 
 
 x_partition = partition_kmeans(xy, coords = c("X", "Y"), nfold = 5, seed1 = 1, return_factor = TRUE)
+
 
 x_partition = data.frame(cst_id = trainSites$tree_id,
                          partition = as.vector(x_partition[[1]]))

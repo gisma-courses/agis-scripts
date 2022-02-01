@@ -114,13 +114,25 @@ hist(traintmp$rad_klimastation, 24)
 hist(traintmp$cloudiness, 24)
 
 
+
+
+# linear mixed models have issues with different scales
+# lmer function gives warning, that some predictors have very different scales
+# rf is quite robust to different scales, but svm need scaling
+
+preProcValues <- caret::preProcess(traintmp, method = c("center", "scale"))
+traintmpscaled = predict(preProcValues, traintmp)
+
 ## -----4 output------
+
 saveRDS(traintmp, file.path(envrmt$path_auxdata, "trainDFmcClean.rds"))
-trainDF <- readRDS(file.path(envrmt$path_auxdata, "trainDFmcClean.rds"))
+saveRDS(traintmpscaled, file.path(envrmt$path_auxdata, "trainDFmcScaled.rds"))
+saveRDS(preProcValues, file.path(envrmt$path_auxdata, "preProcValues.rds"))
 
 
 ## ----5 visualizations -----
 
+trainDF <- readRDS(file.path(envrmt$path_auxdata, "trainDFmcClean.rds"))
 
 ggplot(trainDFclean, aes(x = rad, y = temp))+
   geom_point( aes(color = hour))+

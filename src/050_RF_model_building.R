@@ -36,111 +36,75 @@ trainDF = readRDS(file.path(envrmt$path_auxdata, "trainDFmcScaled.rds"))
 trainSites <- read_sf(file.path(envrmt$path_auxdata, "core_study_trees.shp"))
 trainSites = st_transform(trainSites,crs = 25832)
 set.seed(100)
-predictors = names(trainDF[ , !(names(trainDF) %in% c("temp","cst_id","coverage_fraction"))])
+predictors = names(trainDF[ , !(names(trainDF) %in% c("doy","hour","day","Wind_direction_10m","Wind_direction_3m","rad_klimastation","Windspeed_10m","RlNet","temp","cst_id","coverage_fraction","rel_humidity","LUpCo", "rad_sw_in","rad_lw_out","partition","doy_hour_id"))])
  
 response <- "temp"
-
-
-cl <- makeCluster(24)
 
 
 # --- 3 - start code ----
 
 # partition data spatially with partitions_kmeans
 trainSites <- filter(trainSites, trainSites$tree_id %in% trainDF$cst_id)
-xy <- as.data.frame(st_coordinates(trainSites))
 
+x_partition = as.vector(partition_kmeans(st_coordinates(trainSites), 
+                                         coords = c("X", "Y"), 
+                                         nfold = 5, seed1 = 1, 
+                                         return_factor = TRUE,  
+                                         repetition = 1, 
+                                         balancing_steps = 1))[[1]]
 
-x_partition = partition_kmeans(xy, coords = c("X", "Y"), nfold = 5, seed1 = 1, return_factor = TRUE)
+partitionDF = data.frame(cst_id = trainSites$tree_id,
+                         partition = x_partition)
 
-
-x_partition = data.frame(cst_id = trainSites$tree_id,
-                         partition = as.vector(x_partition[[1]]))
-
-trainDF = merge(trainDF, x_partition, by = "cst_id")
-
-# reduce size of trainDF by randomly selecting 20% of the data
+trainDF = merge(trainDF, partitionDF, by = "cst_id")
+trainSites = inner_join(trainSites, partitionDF, by = c("tree_id" = "cst_id"))
+mapview(trainSites,zcol="partition",fgb=F)
 
 set.seed(100)
-Index <- createDataPartition(trainDF$partition, p = 0.2, list = FALSE)
+Index <- createDataPartition(trainDF$partition, p = 0.01, list = FALSE)
 trainDF_small <- trainDF[Index,]
+# create space (10 cluster) time (10 days) folds
+trainDF_small$timevar = substr(trainDF_small$doy_hour_id,1,2)
+folds <- CreateSpacetimeFolds(trainDF_small, spacevar = "partition", k = 5,timevar = "timevar")
 
-# create folds
-
-folds <- CreateSpacetimeFolds(trainDF_small, 
-                              spacevar = "partition", 
-                              k = 5)
-
-
-
-# pipeline for parameter tuning and feature selection inspired from https://stats.stackexchange.com/a/323899
-
-## --- .1 - do preliminary hyperparameter tuning ----- 
+# forward feature selection
+#cl <- makeCluster(8)
+#registerDoParallel(cl)
 
 ctrl <- trainControl(method = "cv", 
-                     savePredictions = TRUE,
-                     index = folds$index, 
-                     indexOut = folds$indexOut, 
-                     search = "random")
+                     index = folds$index,
+                     indexOut = folds$indexOut,
+                     savePredictions = TRUE)
 
-registerDoParallel(cl)
+ffs_model <- CAST::ffs(trainDF_small[,predictors],
+                       trainDF_small[,response],
+                       method = "rf",
+                       metric="RMSE",
+                       importance =TRUE,
+                       tuneGrid = expand.grid(mtry = 2),
+                       ntree = 100,
+                       trControl = ctrl)
+#stopCluster(cl)
 
-set.seed(100)
-rf_random <- train(trainDF_small[,predictors],
-                   trainDF_small[,response],
-                   method = "rf",
-                   metric = "RMSE",
-                   ntree= 200,    # 500 default of the randomforest package
-                   tuneLength = 5,
-                   trControl = ctrl)
+ffs_model$selectedvars
 
-stopCluster(cl)
 
-saveRDS(rf_random, file.path(envrmt$path_model, "rf/rf_1_parameter_tuning.rds"))
+saveRDS(ffs_model, file.path(envrmt$path_auxdata, "rf_2_ffs.rds"))
+ffs_model = readRDS(file.path(envrmt$path_auxdata, "rf_2_ffs.rds"))
 
-print(rf_random)
-plot(rf_random)
+# 2 - final hyperparameter tuning
 
-# 2 - feature selection
+predictors = ffs_model$selectedvars
 
 ctrl <- trainControl(method = "cv", 
                      savePredictions = TRUE,
                      index = folds$index, 
                      indexOut = folds$indexOut)
 
-mtry = rf_random$bestTune$mtry
-tunegrid = expand.grid(.mtry = mtry)
-
-registerDoParallel(cl)
-
-set.seed(100)
-rf_ffs <- ffs(trainDF_small[,predictors],
-              trainDF_small[,response],
-              method = "rf",
-              metric = "RMSE",
-              ntree= 200,    # 500 default of the randomforest package
-              tuneGrid = tunegrid,
-              trControl = ctrl)
-
-stopCluster(cl)
-
-print(rf_ffs)
-saveRDS(rf_ffs, file.path(envrmt$path_model, "rf/rf_2_ffs.rds"))
-rf_ffs = readRDS(file.path(envrmt$path_model, "rf/rf_2_ffs.rds"))
-
-# 3 - final hyperparameter tuning
-
-predictors = rf_ffs$selectedvars
-
-ctrl <- trainControl(method = "cv", 
-                     savePredictions = TRUE,
-                     index = folds$index, 
-                     indexOut = folds$indexOut)
-
-tunegrid = expand.grid(.mtry = c(2:8))
+tunegrid = expand.grid(.mtry = c(2:4))
 
 modellist <- list()
-
+cl <- makeCluster(30)
 registerDoParallel(cl)
 
 for (ntree in c(200, 400, 600)) {
@@ -164,13 +128,13 @@ stopCluster(cl)
 
 rf_tuned = resamples(modellist)
 summary(rf_tuned)
-dotPlot(rf_tuned)
+plot(rf_tuned)
 
 # best mtry is 5
 # highest accuracy was calculated with ntree = 600
 
-saveRDS(rf_tuned, file.path(envrmt$path_model, "rf/rf_3_final_tuning.rds"))
-rf_tuned = readRDS(file.path(envrmt$path_model,"rf/rf_3_final_tuning.rds"))
+saveRDS(rf_tuned, file.path(envrmt$path_auxdata, "rf_3_final_tuning.rds"))
+rf_tuned = readRDS(file.path(envrmt$path_auxdata,"rf_3_final_tuning.rds"))
 
 # 4 - final model
 
@@ -181,12 +145,12 @@ ctrl <- trainControl(method = "cv",
                      index = folds$index, 
                      indexOut = folds$indexOut)
 
-mtry = 5
+mtry = 3
 tunegrid = expand.grid(.mtry = mtry)
 
 ntree = 600
 
-cl = makeCluster(8)
+cl = makeCluster(16)
 
 registerDoParallel(cl)
   
@@ -205,7 +169,7 @@ stopCluster(cl)
 
 rf_final
 
-varImp(rf_final)
+plot(varImp(rf_final))
 
-saveRDS(rf_final, file.path(envrmt$path_model, "rf/rf_4_final.rds"))
-rf_final = readRDS(file.path(envrmt$path_model,"rf/rf_4_final.rds"))
+saveRDS(rf_final, file.path(envrmt$path_auxdata, "rf_4_final.rds"))
+rf_final = readRDS(file.path(envrmt$path_auxdata,"rf_4_final.rds"))
